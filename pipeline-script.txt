@@ -1,0 +1,114 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = 'project01'  // Name of the Docker image
+        DOCKER_HUB_REPO = '1sharathchandra/project01'  // Docker Hub repository
+        WELCOME_PAGE_PATH = './index.html'  // Path to your index.html in the repo
+        CONTAINER_PATH = '/usr/share/nginx/html/index.html'  // Nginx document root in the container
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                script {
+                    // Checkout the code from the GitHub repository (main branch)
+                    git branch: 'main', url: 'https://github.com/sharathchandra3/project01.git'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build Docker image from the Dockerfile in the repo
+                    sh 'docker build -t ${DOCKER_IMAGE}:latest .'
+                }
+            }
+        }
+
+        stage('Remove Existing Container') {
+            steps {
+                script {
+                    try {
+                        // Remove the existing container if it exists
+                        sh "docker rm -f ${DOCKER_IMAGE}"
+                    } catch (Exception e) {
+                        echo 'No existing container to remove.'
+                    }
+                }
+            }
+        }
+
+        stage('Run New Container') {
+            steps {
+                script {
+                    // Run the new container from the built image
+                    sh "docker run -d --name ${DOCKER_IMAGE} -p 80:80 ${DOCKER_IMAGE}:latest"
+                }
+            }
+        }
+
+        stage('Update Welcome Page') {
+            steps {
+                script {
+                    // Copy the updated index.html file into the running container
+                    sh "docker cp ${WELCOME_PAGE_PATH} ${DOCKER_IMAGE}:${CONTAINER_PATH}"
+                }
+            }
+        }
+
+        stage('Tag Image as Latest') {
+            steps {
+                script {
+                    // Remove the old 'latest' tag if it exists
+                    sh "docker rmi -f ${DOCKER_HUB_REPO}:latest || true"
+                    // Tag the current image as the latest version
+                    sh "docker tag ${DOCKER_IMAGE}:latest ${DOCKER_HUB_REPO}:latest"
+                }
+            }
+        }
+
+        stage('Check for Latest Tag in Docker Hub') {
+            steps {
+                script {
+                    try {
+                        // Fetch the tags from Docker Hub repository
+                        def tags = sh(script: "curl -s https://registry.hub.docker.com/v2/repositories/${DOCKER_HUB_REPO}/tags/", returnStdout: true)
+                        def latestTagExists = tags.contains('\"name\": \"latest\"')
+                        
+                        // Logic for version increment based on the presence of 'latest' tag
+                        if (latestTagExists) {
+                            def latestVersion = sh(script: "echo ${tags} | jq -r '.results | .[] | select(.name | startswith(\"0.1\")) | .name' | sort -V | tail -n 1", returnStdout: true).trim()
+                            def newVersion = latestVersion.replaceFirst(/0.1\.(\\d+)/, { match, seq -> "0.1.${seq.toInteger() + 1}" })
+                            currentBuild.description = "New Version: ${newVersion}"
+                            echo "New Version: ${newVersion}"
+                        } else {
+                            echo 'No latest tag found, using 0.1.0'
+                            currentBuild.description = "New Version: 0.1.0"
+                        }
+                    } catch (Exception e) {
+                        echo "Failed to fetch Docker Hub tags. Using 0.1.0"
+                        currentBuild.description = "New Version: 0.1.0"
+                    }
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    // Push the latest Docker image to Docker Hub
+                    sh "docker push ${DOCKER_HUB_REPO}:latest"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean workspace after each build
+            cleanWs()
+        }
+    }
+}
