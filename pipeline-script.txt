@@ -98,6 +98,15 @@ pipeline {
         stage('Push to Docker Hub') {
             steps {
                 script {
+                    // Define the Docker Hub username directly (since your username is '1sharathchandra')
+                    def DOCKER_USER = '1sharathchandra'  // Your Docker Hub username
+
+                    // Docker login using Jenkins credentials (Secret Text for password/API token)
+                    withCredentials([string(credentialsId: 'docker-hub', variable: 'DOCKER_PASS')]) {
+                        // Perform the Docker login with the username and password
+                        sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                    }
+
                     // Push the latest Docker image to Docker Hub
                     sh "docker push ${DOCKER_HUB_REPO}:latest"
                 }
