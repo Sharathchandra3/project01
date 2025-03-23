@@ -1,4 +1,4 @@
-# Use Amazon Linux 2 as the base image 
+# Use Amazon Linux as the base image 
 FROM amazonlinux 
 
 # Install Nginx and clean up unnecessary files 
